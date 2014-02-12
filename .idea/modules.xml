@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project version="4">
+  <component name="ProjectModuleManager">
+    <modules>
+      <module fileurl="file://$PROJECT_DIR$/ToodleTool.iml" filepath="$PROJECT_DIR$/ToodleTool.iml" />
+      <module fileurl="file://$PROJECT_DIR$/toodletool/toodletool.iml" filepath="$PROJECT_DIR$/toodletool/toodletool.iml" />
+    </modules>
+  </component>
+</project>
+
