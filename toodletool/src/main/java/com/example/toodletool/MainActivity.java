@@ -1,5 +1,6 @@
 package com.example.toodletool;
 
+import android.app.ProgressDialog;
 import android.content.Context;
 import android.content.SharedPreferences;
 import android.content.res.Configuration;
@@ -57,6 +58,8 @@ public class MainActivity extends ActionBarActivity implements NavigationDrawerF
     private static final String ALIAS = "alias";
     private static final String EMAIL = "email";
 
+    private Context context;
+
     private String[] options;
     private DrawerLayout drawerLayout;
     private ActionBarDrawerToggle drawerToggle;
@@ -78,10 +81,13 @@ public class MainActivity extends ActionBarActivity implements NavigationDrawerF
 
     private ArrayList<JSONObject> tasks;
 
+    //private ProgressDialog progressDialog;
+
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         setContentView(R.layout.activity_main);
+        context = this;
 
         loginFragment = new LoginFragment();
         taskFragment = new TaskFragment();
@@ -189,10 +195,9 @@ public class MainActivity extends ActionBarActivity implements NavigationDrawerF
                 return token;
             } else if (!"".equals(storedRefreshSecret) && (System.currentTimeMillis() - storedAccessTokenTime) < 2592000000L) {
                 Log.d(TAG, "Using stored refresh Token");
-                Verifier v = new Verifier(toodleToolPrefs.getString(STORED_REFRESH_SECRET, ""));
+
                 RefreshTokenHolder.getInstance().setAccessStatus(false);
                 RefreshTokenHolder.getInstance().setRefreshStatus(true);
-                //accessToken = service.getAccessToken(Token.empty(), v);
                 return toodleToolPrefs.getString(STORED_REFRESH_SECRET, "");
             } else {
                 Log.d(TAG, "No good stored Token");
@@ -235,10 +240,13 @@ public class MainActivity extends ActionBarActivity implements NavigationDrawerF
                                         editor.putLong(STORED_TOKEN_TIME, System.currentTimeMillis());
                                         editor.putString(STORED_REFRESH_SECRET, RefreshTokenHolder.getInstance().getSecret());
                                         editor.commit();
-
-                                        Log.d(TAG, "get stored access token secret just after saving = " + toodleToolPrefs.getString(STORED_ACCESS_SECRET, ""));
-                                        GetAccountInfo info = new GetAccountInfo();
-                                        info.execute();
+                                        runOnUiThread(new Runnable() {
+                                            @Override
+                                            public void run() {
+                                                GetAccountInfo info = new GetAccountInfo();
+                                                info.execute();
+                                            }
+                                        });
                                     }
                                 };
                                 t.start();
@@ -250,7 +258,7 @@ public class MainActivity extends ActionBarActivity implements NavigationDrawerF
                 } catch (OAuthException e) {
                     e.printStackTrace();
                 }
-            } else if (RefreshTokenHolder.getInstance().getRefreshStatus() == true) {
+            } else if (RefreshTokenHolder.getInstance().getRefreshStatus()) {
                 try {
                     Thread t = new Thread() {
                         public void run() {
@@ -263,8 +271,14 @@ public class MainActivity extends ActionBarActivity implements NavigationDrawerF
                             editor.putLong(STORED_TOKEN_TIME, System.currentTimeMillis());
                             editor.putString(STORED_REFRESH_SECRET, RefreshTokenHolder.getInstance().getSecret());
                             editor.commit();
-                            GetAccountInfo info = new GetAccountInfo();
-                            info.execute();
+
+                            runOnUiThread(new Runnable() {
+                                @Override
+                                public void run() {
+                                    GetAccountInfo info = new GetAccountInfo();
+                                    info.execute();
+                                }
+                            });
                         }
                     };
                     t.start();
@@ -272,7 +286,6 @@ public class MainActivity extends ActionBarActivity implements NavigationDrawerF
                     e.printStackTrace();
                 }
             } else {
-
                 GetAccountInfo info = new GetAccountInfo();
                 info.execute();
             }
@@ -280,6 +293,16 @@ public class MainActivity extends ActionBarActivity implements NavigationDrawerF
     }
 
     private class GetAccountInfo extends AsyncTask<Void, Void, Response> {
+        private ProgressDialog progressDialog = new ProgressDialog(MainActivity.this);
+
+        @Override
+        protected void onPreExecute() {
+            super.onPreExecute();
+            progressDialog.setTitle("Wait");
+            progressDialog.setMessage("Getting User Info");
+            progressDialog.show();
+        }
+
         @Override
         protected Response doInBackground(Void... params) {
             Response response = null;
@@ -292,7 +315,7 @@ public class MainActivity extends ActionBarActivity implements NavigationDrawerF
                 e.printStackTrace();
             }
             return response;
-        };
+        }
 
         @Override
         protected void onPostExecute(Response response) {
@@ -305,12 +328,23 @@ public class MainActivity extends ActionBarActivity implements NavigationDrawerF
             } catch (JSONException e) {
                 e.printStackTrace();
             }
+            progressDialog.dismiss();
             webView.setVisibility(View.GONE);
             userName.setText("Username: " + alias);
-        };
+        }
     }
 
     private class GetTasks extends AsyncTask<Void, Void, Void> {
+        private ProgressDialog progressDialog = new ProgressDialog(MainActivity.this);
+
+        @Override
+        protected void onPreExecute() {
+            super.onPreExecute();
+            progressDialog.setTitle("Wait");
+            progressDialog.setMessage("Getting Tasks");
+            progressDialog.show();
+        }
+
         @Override
         protected Void doInBackground(Void... params) {
             Response response = null;
@@ -333,13 +367,12 @@ public class MainActivity extends ActionBarActivity implements NavigationDrawerF
             } catch (JSONException e) {
                 e.printStackTrace();
             }
-
             return null;
         }
 
         @Override
         protected void onPostExecute(Void result) {
-
+            progressDialog.dismiss();
             manager.beginTransaction().hide(currentFrag).show(taskFragment).commit();
             currentFrag = taskFragment;
             taskFragment.updateTasks();
@@ -395,11 +428,35 @@ public class MainActivity extends ActionBarActivity implements NavigationDrawerF
         private ListView listView;
 
         @Override
+        public void onCreate(Bundle savedInstanceState) {
+            setHasOptionsMenu(true);
+            super.onCreate(savedInstanceState);
+        }
+
+        @Override
         public View onCreateView(LayoutInflater inflater, ViewGroup container, Bundle savedInstanceState) {
             View view = inflater.inflate(R.layout.fragment_tasks, container, false);
             listView = (ListView) view.findViewById(R.id.listView);
             listView.setAdapter(new TaskAdapter(getActivity(), R.layout.task_row, tasks));
             return view;
+        }
+
+        @Override
+        public void onCreateOptionsMenu(Menu menu, MenuInflater inflater) {
+            inflater.inflate(R.menu.task, menu);
+        }
+
+        @Override
+        public boolean onOptionsItemSelected(MenuItem item) {
+            switch (item.getItemId()) {
+                case R.id.newTask:
+                    NewTaskFragment newTask = new NewTaskFragment(context, service, accessToken);
+                    manager.beginTransaction().hide(currentFrag).add(R.id.container, newTask, "NewTask").commit();
+                    currentFrag = newTask;
+                    return true;
+                default:
+                    return super.onOptionsItemSelected(item);
+            }
         }
 
         public void updateTasks() {
