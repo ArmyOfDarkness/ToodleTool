@@ -10,9 +10,33 @@
     <string name="action_example">Example action</string>
     <string name="action_settings">Settings</string>
     <string name="newTask">New Task</string>
+    <string name="notes">Notes</string>
+    <string name="sync">Sync</string>
 
     <string-array name="drawerOptions">
         <item>Get Tasks</item>
         <item>Logout</item>
+    </string-array>
+
+    <string-array name="priority">
+        <item>Negative</item>
+        <item>Low</item>
+        <item>Medium</item>
+        <item>High</item>
+        <item>Top</item>
+    </string-array>
+
+    <string-array name="status">
+        <item>None</item>
+        <item>Next Action</item>
+        <item>Active</item>
+        <item>Planning</item>
+        <item>Delegated</item>
+        <item>Waiting</item>
+        <item>Hold</item>
+        <item>Postponed</item>
+        <item>Someday</item>
+        <item>Canceled</item>
+        <item>Reference</item>
     </string-array>
 </resources>

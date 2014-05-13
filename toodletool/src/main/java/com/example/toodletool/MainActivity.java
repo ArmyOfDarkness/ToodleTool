@@ -4,6 +4,7 @@ import android.app.ProgressDialog;
 import android.content.Context;
 import android.content.SharedPreferences;
 import android.content.res.Configuration;
+import android.database.Cursor;
 import android.net.Uri;
 import android.os.AsyncTask;
 import android.os.Bundle;
@@ -26,6 +27,7 @@ import org.scribe.exceptions.OAuthException;
 import org.scribe.model.*;
 import org.scribe.oauth.OAuthService;
 
+import java.sql.SQLException;
 import java.util.ArrayList;
 
 public class MainActivity extends ActionBarActivity implements NavigationDrawerFragment.NavigationDrawerCallbacks, LoginFragment.ViewReadyListener {
@@ -57,6 +59,13 @@ public class MainActivity extends ActionBarActivity implements NavigationDrawerF
     private static final String USER_ID = "userid";
     private static final String ALIAS = "alias";
     private static final String EMAIL = "email";
+    private static final String KEY_TITLE = "title";
+    private static final String KEY_STARTDATE = "startDate";
+    private static final String KEY_DUEDATE = "dueDate";
+    private static final String KEY_PRIORITY = "priority";
+    private static final String KEY_STAR = "star";
+    private static final String KEY_NOTES = "notes";
+    private static final String KEY_STATUS = "status";
 
     private Context context;
 
@@ -129,8 +138,8 @@ public class MainActivity extends ActionBarActivity implements NavigationDrawerF
                         if ("".equals(toodleToolPrefs.getString(USER_ID, ""))) {
                             break;
                         }
-                        GetTasks getTasks = new GetTasks();
-                        getTasks.execute();
+                        //GetTasks getTasks = new GetTasks();
+                        //getTasks.execute();
                         manager.beginTransaction().hide(currentFrag).show(taskFragment).commit();
                         currentFrag = taskFragment;
                         drawerLayout.closeDrawer(drawerLayout.getChildAt(1));
@@ -426,18 +435,27 @@ public class MainActivity extends ActionBarActivity implements NavigationDrawerF
 
     private class TaskFragment extends Fragment {
         private ListView listView;
+        private Cursor cursor;
+        private TaskDBAdapter dbAdapter;
 
         @Override
         public void onCreate(Bundle savedInstanceState) {
             setHasOptionsMenu(true);
             super.onCreate(savedInstanceState);
+            dbAdapter = new TaskDBAdapter(context);
+            try {
+                dbAdapter.open();
+            } catch (SQLException e) {
+                e.printStackTrace();
+            }
         }
 
         @Override
         public View onCreateView(LayoutInflater inflater, ViewGroup container, Bundle savedInstanceState) {
             View view = inflater.inflate(R.layout.fragment_tasks, container, false);
+            cursor = dbAdapter.fetchTasks();
             listView = (ListView) view.findViewById(R.id.listView);
-            listView.setAdapter(new TaskAdapter(getActivity(), R.layout.task_row, tasks));
+            listView.setAdapter(new TaskAdapter(getActivity(), cursor, 0));
             return view;
         }
 
@@ -454,6 +472,12 @@ public class MainActivity extends ActionBarActivity implements NavigationDrawerF
                     manager.beginTransaction().hide(currentFrag).add(R.id.container, newTask, "NewTask").commit();
                     currentFrag = newTask;
                     return true;
+                case R.id.sync:
+                    Cursor newTaskCursor = dbAdapter.fetchNewTasks();
+                    if (cursor.getCount() > 0) {
+                        SyncTasks sync = new SyncTasks();
+                        sync.execute(newTaskCursor);
+                    }
                 default:
                     return super.onOptionsItemSelected(item);
             }
@@ -461,6 +485,79 @@ public class MainActivity extends ActionBarActivity implements NavigationDrawerF
 
         public void updateTasks() {
             ((BaseAdapter) listView.getAdapter()).notifyDataSetChanged();
+        }
+
+        private class SyncTasks extends AsyncTask<Cursor, Void, Response> {
+            private ProgressDialog progressDialog = new ProgressDialog(context);
+
+            @Override
+            protected void onPreExecute() {
+                super.onPreExecute();
+                progressDialog.setTitle("Wait");
+                progressDialog.setMessage("Submitting Tasks");
+                progressDialog.show();
+            }
+
+            @Override
+            protected Response doInBackground(Cursor... params) {
+                OAuthRequest request = new OAuthRequest(Verb.POST, "http://api.toodledo.com/3/tasks/add.php");
+                service.signRequest(accessToken, request);
+                Cursor cursor = params[0];
+                cursor.moveToFirst();
+                //get column numbers
+                final int TITLE_INDEX = cursor.getColumnIndex(KEY_TITLE);
+                final int STAR_INDEX = cursor.getColumnIndex(KEY_STAR);
+                final int START_INDEX = cursor.getColumnIndex(KEY_STARTDATE);
+                final int DUE_INDEX = cursor.getColumnIndex(KEY_DUEDATE);
+                final int PRIORITY_INDEX = cursor.getColumnIndex(KEY_PRIORITY);
+                final int STATUS_INDEX = cursor.getColumnIndex(KEY_STATUS);
+                final int NOTES_INDEX = cursor.getColumnIndex(KEY_NOTES);
+                String json = "[{";
+                while (!cursor.isAfterLast()) {
+
+                    String taskTitle = cursor.getString(TITLE_INDEX);
+                    int star = cursor.getInt(STAR_INDEX);
+
+                    if (!cursor.isFirst()) {
+                        json += ",{";
+                    }
+                    json += "\"title\":\"" + taskTitle + "\",\"star\":" + star;
+                    if (!cursor.isNull(START_INDEX)) {
+                        json += ",\"startdate\":" + cursor.getLong(START_INDEX);
+                    }
+                    if (!cursor.isNull(DUE_INDEX)) {
+                        json += ",\"duedate\":" + cursor.getLong(DUE_INDEX);
+                    }
+                    if (!cursor.isNull(PRIORITY_INDEX)) {
+                        json += ",\"priority\":" + cursor.getInt(PRIORITY_INDEX);
+                    }
+                    if (!cursor.isNull(STATUS_INDEX)) {
+                        json += ",\"status\":" + cursor.getInt(STATUS_INDEX);
+                    }
+                    if (!cursor.isNull(NOTES_INDEX)) {
+                        json += ",\"notes\":\"" + cursor.getString(NOTES_INDEX) + "\"";
+                    }
+                    json += "}";
+                    cursor.moveToNext();
+                }
+                json += "]";
+                request.addBodyParameter("tasks", json);
+                //Log.d("Sync test: ", json);
+                Response response = request.send();
+                return response;
+            }
+
+            @Override
+            protected void onPostExecute(Response response) {
+                progressDialog.dismiss();
+                if (response.getBody().contains("error")) {
+                    Log.d("Sync test: ", response.toString());
+                    Toast.makeText(context, "Error submitting task", Toast.LENGTH_SHORT).show();
+                } else {
+                    Toast.makeText(context, "Submitted successfully", Toast.LENGTH_SHORT).show();
+                }
+                Log.d("Sync test: ", response.getBody());
+            }
         }
     }
 }
